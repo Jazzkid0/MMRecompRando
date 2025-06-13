@@ -4,6 +4,9 @@
 
 #include "apcommon.h"
 
+// #include "overlays/actors/ovl_En_Bal/z_en_bal.h"
+// #include "overlays/actors/ovl_En_Clear_Tag/z_en_clear_tag.h"
+
 #define TINGLE_LIMB_MAX 0x21
 #define TINGLE_LIMB_BALLOON 0x06
 
@@ -252,3 +255,302 @@ RECOMP_PATCH s32 EnBal_CheckIfMapUnlocked(EnBal* this, PlayState* play) {
 RECOMP_PATCH void EnBal_UnlockSelectedAreaMap(EnBal* this) {
     return;
 }
+
+void EnBal_SetupInflateBalloon(EnBal* this);
+void EnBal_InflateBalloon(EnBal* this, PlayState* play);
+void EnBal_SetupTalk(EnBal* this);
+extern bool Actor_TalkOfferAccepted(Actor* this, GameState* play);
+extern void EnBal_ThrowMagicSparkles(EnBal* this, PlayState* play);
+
+RECOMP_PATCH void EnBal_GroundIdle(EnBal* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if (this->timer == 300) {
+        if (Animation_OnFrame(&this->skelAnime, this->skelAnime.endFrame)) {
+            EnBal_SetupInflateBalloon(this);
+            return;
+        }
+    } else if (this->timer < 300) {
+        this->timer++;
+    }
+
+    if (Actor_TalkOfferAccepted(&this->picto.actor, &play->state)) {
+        this->forceEyesShut = false;
+        this->eyeTexIndex = TINGLE_EYETEX_OPEN;
+        this->watchTarget = TINGLE_WATCH_TARGET_PLAYER;
+        Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+        Message_StartTextbox(play, 0x1D04, &this->picto.actor);
+        this->textId = 0x1D04;
+        EnBal_SetupTalk(this);
+    } else {
+        if ((this->picto.actor.xzDistToPlayer < 100.0f) && (this->actionFunc != EnBal_InflateBalloon)) {
+            if (this->idleAnimStage != TINGLE_IDLESTAGE_WAIT) {
+                this->watchTarget = TINGLE_WATCH_TARGET_PLAYER;
+            } else {
+                this->watchTarget = TINGLE_WATCH_TARGET_NONE;
+            }
+
+            if (!(player->stateFlags1 & PLAYER_STATE1_800000) && !(player->actor.bgCheckFlags & BGCHECKFLAG_WATER) &&
+                ((this->timer < 300) || (this->timer == 301))) {
+                Actor_OfferTalk(&this->picto.actor, play, 100.0f);
+            }
+        } else {
+            this->watchTarget = TINGLE_WATCH_TARGET_NONE;
+        }
+
+        if (Animation_OnFrame(&this->skelAnime, this->skelAnime.endFrame)) {
+            if (this->idleAnimStage == TINGLE_IDLESTAGE_PREP_WAIT) {
+                this->forceEyesShut = false;
+                this->eyeTexIndex = TINGLE_EYETEX_OPEN;
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_IDLE);
+                this->idleAnimStage++;
+            } else if (this->idleAnimStage == TINGLE_IDLESTAGE_WAIT) {
+                if (Rand_Next() & 1) {
+                    this->forceEyesShut = false;
+                    this->eyeTexIndex = TINGLE_EYETEX_OPEN;
+                    Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+                } else {
+                    this->forceEyesShut = true;
+                    Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_SPIN);
+                }
+                this->idleAnimStage = TINGLE_IDLESTAGE_ACTIVITY;
+            } else {
+                this->idleAnimStage++;
+            }
+        } else if ((this->idleAnimStage == TINGLE_IDLESTAGE_WAIT) && Animation_OnFrame(&this->skelAnime, 20.0f)) {
+            this->forceEyesShut = true;
+        }
+    }
+}
+
+static s32 sGetItemPending = false;
+
+RECOMP_PATCH void EnBal_TryPurchaseMap(EnBal* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 price;
+
+    if (Message_ShouldAdvance(play)) {
+        if (play->msgCtx.choiceIndex != TINGLE_MAPCHOICE_CANCEL) {
+            // Get price depending on which map player wants to buy
+            if (play->msgCtx.choiceIndex == TINGLE_MAPCHOICE_PROXIMAL) {
+                price = play->msgCtx.unk1206C;
+            } else {
+                price = play->msgCtx.unk12070;
+            }
+
+            if (gSaveContext.save.saveInfo.playerData.rupees < price) {
+                // Can't buy map because player doesn't have the money
+                Audio_PlaySfx(NA_SE_SY_ERROR);
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+                Message_StartTextbox(play, 0x1D0A, &this->picto.actor);
+                this->textId = 0x1D0A;
+            } else if (EnBal_CheckIfMapUnlocked(this, play)) {
+                // Can't buy map because player already has it
+                Audio_PlaySfx(NA_SE_SY_ERROR);
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+                Message_StartTextbox(play, 0x1D09, &this->picto.actor);
+                this->textId = 0x1D09;
+            } else {
+                // Proceed with map purchase
+                Audio_PlaySfx_MessageDecide();
+                Rupees_ChangeBy(-price);
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_MAGIC_REVERSE);
+                this->forceEyesShut = true;
+                Message_StartTextbox(play, 0x1D07, &this->picto.actor);
+                this->textId = 0x1D07;
+                EnBal_UnlockSelectedAreaMap(this);
+                player->stateFlags1 |= PLAYER_STATE1_20;
+                EnBal_SetupOfferGetItem(this);
+            }
+        } else {
+            // Cancel
+            Audio_PlaySfx_MessageCancel();
+            Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+            Message_StartTextbox(play, 0x1D06, &this->picto.actor);
+            this->textId = 0x1D06; // I see! call again
+        }
+    }
+}
+
+RECOMP_PATCH void EnBal_HandleConversation(EnBal* this, PlayState* play) {
+    if (Message_ShouldAdvance(play)) {
+        switch (this->textId) {
+            case 0x1D00: // (removed)
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+                Message_StartTextbox(play, 0x1D01, &this->picto.actor);
+                this->textId = 0x1D01;
+                break;
+
+            case 0x1D01: // (removed)
+                this->watchTarget = TINGLE_WATCH_TARGET_PLAYER;
+                Message_StartTextbox(play, 0x1D02, &this->picto.actor);
+                this->textId = 0x1D02;
+                break;
+
+            case 0x1D02: // (removed)
+                this->forceEyesShut = true;
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_HAPPY_DANCE_LOOP);
+                Message_StartTextbox(play, 0x1D03, &this->picto.actor);
+                this->textId = 0x1D03;
+                break;
+
+            case 0x1D03: // (removed)
+            case 0x1D0D: // (removed)
+                this->forceEyesShut = false;
+                this->eyeTexIndex = TINGLE_EYETEX_OPEN;
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_TALK);
+                Message_StartTextbox(play, 0x1D04, &this->picto.actor);
+                this->textId = 0x1D04;
+                break;
+
+            case 0x1D04: // Will you buy a map?
+                this->watchTarget = TINGLE_WATCH_TARGET_PLAYER;
+                switch (this->locationMapId) {
+                    case TINGLE_MAP_CLOCK_TOWN:
+                        Message_StartTextbox(play, 0x1D11, &this->picto.actor);
+                        this->textId = 0x1D11;
+                        break;
+
+                    case TINGLE_MAP_WOODFALL:
+                        Message_StartTextbox(play, 0x1D12, &this->picto.actor);
+                        this->textId = 0x1D12;
+                        break;
+
+                    case TINGLE_MAP_SNOWHEAD:
+                        Message_StartTextbox(play, 0x1D13, &this->picto.actor);
+                        this->textId = 0x1D13;
+                        break;
+
+                    case TINGLE_MAP_ROMANI_RANCH:
+                        Message_StartTextbox(play, 0x1D14, &this->picto.actor);
+                        this->textId = 0x1D14;
+                        break;
+
+                    case TINGLE_MAP_GREAT_BAY:
+                        Message_StartTextbox(play, 0x1D15, &this->picto.actor);
+                        this->textId = 0x1D15;
+                        break;
+
+                    case TINGLE_MAP_STONE_TOWER:
+                        Message_StartTextbox(play, 0x1D16, &this->picto.actor);
+                        this->textId = 0x1D16;
+                        break;
+
+                    default:
+                        Message_StartTextbox(play, 0x1D11, &this->picto.actor);
+                        this->textId = 0x1D11;
+                        break;
+                }
+                break;
+
+            case 0x1D05:
+            case 0x1D0C:
+                this->watchTarget = TINGLE_WATCH_TARGET_FAIRY;
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_HAPPY_DANCE_LOOP);
+                Message_StartTextbox(play, 0x1D0D, &this->picto.actor);
+                this->textId = 0x1D0D;
+                break;
+
+            case 0x1D06:
+            case 0x1D17:
+                this->watchTarget = TINGLE_WATCH_TARGET_NONE;
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_MAGIC);
+                this->forceEyesShut = true;
+                Message_StartTextbox(play, 0x1D07, &this->picto.actor);
+                this->textId = 0x1D07;
+                break;
+
+            case 0x1D07:
+                Message_CloseTextbox(play);
+                EnBal_SetupGroundIdle(this);
+                break;
+
+            case 0x1D08:
+            case 0x1D09:
+            case 0x1D0A:
+                Message_CloseTextbox(play);
+                EnBal_SetupGroundIdle(this);
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
+RECOMP_PATCH void EnBal_OfferGetItem(EnBal* this, PlayState* play) {
+    GetItemId mapGetItemId;
+
+    // wait until after 1D07 (we must hear the magic spell)
+    if (this->textId == 0x1D07) {
+        if (this->skelAnime.animation != sAnimationInfo[TINGLE_ANIM_MAGIC].animation) {
+            Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, TINGLE_ANIM_MAGIC);
+            this->forceEyesShut = true;
+        }
+        if ((this->skelAnime.curFrame > 29.0f) && (this->skelAnime.curFrame < 33.0f)) {
+            if (Animation_OnFrame(&this->skelAnime, 30.0f)) {
+                Actor_PlaySfx(&this->picto.actor, NA_SE_EV_CHINCLE_SPELL_EFFECT);
+            }
+            EnBal_ThrowMagicSparkles(this, play);
+        }
+        if (Animation_OnFrame(&this->skelAnime, 35.0f)) {
+            this->forceEyesShut = false;
+            this->eyeTexIndex = TINGLE_EYETEX_OPEN;
+        }
+
+        if (!sGetItemPending &&
+            Message_GetState(&play->msgCtx) == TEXT_STATE_5 && // TEXT_STATE_EVENT not working for some reason
+            Message_ShouldAdvance(play)) {
+            sGetItemPending = true;
+            Message_CloseTextbox(play);
+            return;
+        }
+    }
+
+    // wait for no message
+    if (sGetItemPending && (Message_GetState(&play->msgCtx) != TEXT_STATE_NONE)) {
+        return;
+    }
+
+    // offer item
+    if (Actor_HasParent(&this->picto.actor, play)) {
+        this->picto.actor.parent = NULL;
+        GET_PLAYER(play)->stateFlags1 &= ~PLAYER_STATE1_20;
+        sGetItemPending = false;
+        EnBal_SetupGroundIdle(this);
+        return;
+    }
+
+
+    switch (this->purchaseMapId) {
+        case TINGLE_MAP_CLOCK_TOWN:
+            mapGetItemId = GI_TINGLE_MAP_CLOCK_TOWN;
+            break;
+
+        case TINGLE_MAP_WOODFALL:
+            mapGetItemId = GI_TINGLE_MAP_WOODFALL;
+            break;
+
+        case TINGLE_MAP_SNOWHEAD:
+            mapGetItemId = GI_TINGLE_MAP_SNOWHEAD;
+            break;
+
+        case TINGLE_MAP_ROMANI_RANCH:
+            mapGetItemId = GI_TINGLE_MAP_ROMANI_RANCH;
+            break;
+
+        case TINGLE_MAP_GREAT_BAY:
+            mapGetItemId = GI_TINGLE_MAP_GREAT_BAY;
+            break;
+
+        case TINGLE_MAP_STONE_TOWER:
+            mapGetItemId = GI_TINGLE_MAP_STONE_TOWER;
+            break;
+
+        default:
+            mapGetItemId = GI_TINGLE_MAP_CLOCK_TOWN;
+            break;
+    }
+    Actor_OfferGetItem(&this->picto.actor, play, mapGetItemId, 500.0f, 100.0f);
+}
+

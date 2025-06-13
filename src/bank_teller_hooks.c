@@ -76,6 +76,31 @@ static AnimationInfo sAnimationInfo[GINKO_ANIM_MAX] = {
 };
 
 bool awardChecked;
+extern bool Actor_TalkOfferAccepted(Actor* this, GameState* play);
+
+RECOMP_PATCH void EnGinkoMan_Idle(EnGinkoMan* this, PlayState* play) {
+    s32 yaw = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
+
+    EnGinkoMan_SwitchAnimation(this, play);
+    if (Actor_TalkOfferAccepted(&this->actor, &play->state)) {
+        if (HS_GET_BANK_RUPEES() == 0) {
+            if (CHECK_WEEKEVENTREG(WEEKEVENTREG_10_08)) {
+                Message_StartTextbox(play, 0x44E, &this->actor);
+                this->curTextId = 0x44E; // deposit or exit
+            } else {
+                Message_StartTextbox(play, 0x44D, &this->actor);
+                this->curTextId = 0x44D; // example deposit reward. Leave in for rando to spoil item?
+            }
+        } else {
+            Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_SITTING);
+            Message_StartTextbox(play, 0x468, &this->actor);
+            this->curTextId = 0x468; // deposit, withdraw or exit
+        }
+        EnGinkoMan_SetupDialogue(this);
+    } else if (ABS_ALT(yaw) < 0x1555) {
+        Actor_OfferTalk(&this->actor, play, 100.0f);
+    }
+}
 
 // action func: non-input dialogue
 RECOMP_PATCH void EnGinkoMan_DepositDialogue(EnGinkoMan* this, PlayState* play) {
@@ -188,25 +213,9 @@ RECOMP_PATCH void EnGinkoMan_DepositDialogue(EnGinkoMan* this, PlayState* play) 
             break;
 
         case 0x461:
-            Message_StartTextbox(play, 0x462, &this->actor);
-            this->curTextId = 0x462;
-            break;
-
         case 0x462:
-            Message_StartTextbox(play, 0x463, &this->actor);
-            this->curTextId = 0x463;
-            break;
-
         case 0x463:
-            Message_StartTextbox(play, 0x464, &this->actor);
-            this->curTextId = 0x464;
-            break;
-
         case 0x464:
-            play->msgCtx.msgMode = MSGMODE_PAUSED;
-            EnGinkoMan_SetupStamp(this); // stamp player
-            break;
-
         case 0x465:
             Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_LEGSMACKING);
             play->msgCtx.bankRupees = HS_GET_BANK_RUPEES();
@@ -235,16 +244,13 @@ RECOMP_PATCH void EnGinkoMan_DepositDialogue(EnGinkoMan* this, PlayState* play) 
                     Message_StartTextbox(play, 0x458, &this->actor);
                     this->curTextId = 0x458;
                 } else {
-                    Message_StartTextbox(play, 0x479, &this->actor);
-                    this->curTextId = 0x479;
+                    Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_LEGSMACKING);
+                    Message_StartTextbox(play, 0x450, &this->actor);
+                    this->curTextId = 0x450; // deposit how much [prompt]
                 }
-            } else if ((CURRENT_DAY == 3) && (gSaveContext.save.isNight == true)) {
-                Message_StartTextbox(play, 0x46D, &this->actor);
-
-                this->curTextId = 0x46D;
             } else { // GINKOMAN_CHOICE_WITHDRAWL
-                Message_StartTextbox(play, 0x46B, &this->actor);
-                this->curTextId = 0x46B;
+                Message_StartTextbox(play, 0x46E, &this->actor);
+                this->curTextId = 0x46E; // withdraw how much
             }
 
             this->choiceDepositWithdrawl = GINKOMAN_CHOICE_RESET;
@@ -256,8 +262,8 @@ RECOMP_PATCH void EnGinkoMan_DepositDialogue(EnGinkoMan* this, PlayState* play) 
             break;
 
         case 0x46D:
-            Message_StartTextbox(play, 0x46B, &this->actor);
-            this->curTextId = 0x46B;
+            Message_StartTextbox(play, 0x46E, &this->actor);
+            this->curTextId = 0x46E;
             break;
 
         case 0x470:
@@ -298,8 +304,9 @@ RECOMP_PATCH void EnGinkoMan_DepositDialogue(EnGinkoMan* this, PlayState* play) 
             break;
 
         case 0x479:
-            Message_StartTextbox(play, 0x44F, &this->actor);
-            this->curTextId = 0x44F;
+            Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_LEGSMACKING);
+            Message_StartTextbox(play, 0x450, &this->actor);
+            this->curTextId = 0x450; // deposit how much [prompt]
             break;
 
         default:
@@ -332,3 +339,159 @@ RECOMP_PATCH void EnGinkoMan_BankAward(EnGinkoMan* this, PlayState* play) {
         Actor_OfferGetItem(&this->actor, play, GI_HEART_PIECE, 500.0f, 100.0f);
     }
 }
+
+RECOMP_PATCH void EnGinkoMan_WaitForDialogueInput(EnGinkoMan* this, PlayState* play) {
+    if (!Message_ShouldAdvance(play)) {
+        return;
+    }
+
+    switch (this->curTextId) {
+        case 0x44E: // deposit or exit
+            if (play->msgCtx.choiceIndex == GINKOMAN_CHOICE_YES) {
+                if (HS_GET_BANK_RUPEES() >= 5000) {
+                    Audio_PlaySfx(NA_SE_SY_ERROR);
+                    Message_StartTextbox(play, 0x45F, &this->actor);
+                    this->curTextId = 0x45F; // bank full, cannot accept more
+                } else {
+                    if (gSaveContext.save.saveInfo.playerData.rupees > 0) {
+                        Audio_PlaySfx_MessageDecide();
+                        Message_StartTextbox(play, 0x450, &this->actor);
+                        this->curTextId = 0x450; // deposit how much
+                    } else {
+                        Audio_PlaySfx(NA_SE_SY_ERROR);
+                        Message_StartTextbox(play, 0x458, &this->actor);
+                        this->curTextId = 0x458; // you're broke
+                    }
+                }
+            } else { // GINKOMAN_CHOICE_NO
+                Audio_PlaySfx_MessageCancel();
+                Message_StartTextbox(play, 0x460, &this->actor);
+                this->curTextId = 0x460; // come again
+            }
+            break;
+
+        case 0x452: // confirm deposit
+            if (play->msgCtx.choiceIndex == GINKOMAN_CHOICE_YES) {
+                if (gSaveContext.save.saveInfo.playerData.rupees < play->msgCtx.bankRupeesSelected) {
+                    Audio_PlaySfx(NA_SE_SY_ERROR);
+                    Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_SITTING);
+                    Message_StartTextbox(play, 0x459, &this->actor);
+                    this->curTextId = 0x459; // not enough in wallet
+                } else {
+                    Audio_PlaySfx_MessageDecide();
+                    if (HS_GET_BANK_RUPEES() == 0) {
+                        this->isNewAccount = true;
+                    }
+
+                    Rupees_ChangeBy(-play->msgCtx.bankRupeesSelected);
+                    this->previousBankValue = HS_GET_BANK_RUPEES();
+                    HS_SET_BANK_RUPEES(HS_GET_BANK_RUPEES() + play->msgCtx.bankRupeesSelected);
+                    play->msgCtx.bankRupees = HS_GET_BANK_RUPEES();
+                    Message_StartTextbox(play, 0x45A, &this->actor);
+                    this->curTextId = 0x45A; // show rupee total
+                }
+            } else { // GINKOMAN_CHOICE_NO
+                Audio_PlaySfx_MessageCancel();
+                Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_SITTING);
+                if (HS_GET_BANK_RUPEES() == 0) {
+                    Message_StartTextbox(play, 0x44E, &this->actor);
+                    this->curTextId = 0x44E; // deposit or exit
+                } else {
+                    Message_StartTextbox(play, 0x468, &this->actor);
+                    this->curTextId = 0x468; // deposit, withdraw or exit
+                }
+            }
+            break;
+
+        case 0x468: // deposit, withdraw or exit
+            if (play->msgCtx.choiceIndex == GINKOMAN_CHOICE_CANCEL) {
+                Audio_PlaySfx_MessageCancel();
+                Message_StartTextbox(play, 0x47C, &this->actor);
+                this->curTextId = 0x47C; // cancel withdrawl
+            } else {
+                Audio_PlaySfx_MessageDecide();
+                this->choiceDepositWithdrawl = play->msgCtx.choiceIndex;
+                this->isStampChecked = true;
+                Message_StartTextbox(play, 0x47E, &this->actor);
+                this->curTextId = 0x47E; // deposits total [rupees]
+            }
+            break;
+
+        case 0x471: // confirm withdrawl
+            if (play->msgCtx.choiceIndex == GINKOMAN_CHOICE_YES) {
+                if ((s32)HS_GET_BANK_RUPEES() < (play->msgCtx.bankRupeesSelected + this->serviceFee)) {
+                    Audio_PlaySfx(NA_SE_SY_ERROR);
+                    Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_LEGSMACKING); 
+                    Message_StartTextbox(play, 0x476, &this->actor);
+                    this->curTextId = 0x476; // not enough to withdraw
+                } else if (CUR_CAPACITY(UPG_WALLET) <
+                           (play->msgCtx.bankRupeesSelected + gSaveContext.save.saveInfo.playerData.rupees)) {
+                    // check if wallet is big enough
+                    Audio_PlaySfx(NA_SE_SY_ERROR);
+                    Message_StartTextbox(play, 0x475, &this->actor);
+                    this->curTextId = 0x475; // not enough wallet space
+                } else {
+                    Audio_PlaySfx_MessageDecide();
+                    this->previousBankValue = HS_GET_BANK_RUPEES();
+                    HS_SET_BANK_RUPEES(HS_GET_BANK_RUPEES() - play->msgCtx.bankRupeesSelected - this->serviceFee);
+                    Rupees_ChangeBy(play->msgCtx.bankRupeesSelected);
+                    if (HS_GET_BANK_RUPEES() == 0) {
+                        Message_StartTextbox(play, 0x478, &this->actor);
+                        this->curTextId = 0x478; // emptied account
+                    } else {
+                        play->msgCtx.bankRupees = HS_GET_BANK_RUPEES();
+                        Message_StartTextbox(play, 0x45A, &this->actor);
+                        this->curTextId = 0x45A; // show rupee total
+                    }
+                }
+            } else {
+                Audio_PlaySfx_MessageCancel();
+                Message_StartTextbox(play, 0x468, &this->actor);
+                this->curTextId = 0x468; // deposit, withdraw or exit
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+
+RECOMP_PATCH void EnGinkoMan_WaitForRupeeCount(EnGinkoMan* this, PlayState* play) {
+    if (Message_ShouldAdvance(play)) {
+        switch (this->curTextId) {
+            case 0x450: // deposit how much
+                if (play->msgCtx.bankRupeesSelected == 0) {
+                    if (HS_GET_BANK_RUPEES() == 0) {
+                        Message_StartTextbox(play, 0x44E, &this->actor);
+                        this->curTextId = 0x44E; // deposit or exit
+                    } else {
+                        Actor_ChangeAnimationByInfo(&this->skelAnime, sAnimationInfo, GINKO_ANIM_SITTING);
+                        Message_StartTextbox(play, 0x468, &this->actor);
+                        this->curTextId = 0x468; // deposit, withdraw or exit
+                    }
+                } else {
+                    Message_StartTextbox(play, 0x452, &this->actor);
+                    this->curTextId = 0x452; // confirm deposit
+                }
+                break;
+
+            case 0x46E: // withdraw how much
+                if (play->msgCtx.bankRupeesSelected == 0) {
+                    Message_StartTextbox(play, 0x47C, &this->actor);
+                    this->curTextId = 0x47C; // cancel withdrawl
+                } else if (gSaveContext.save.isNight == true) {
+                    Message_StartTextbox(play, 0x477, &this->actor);
+                    this->curTextId = 0x477; // state service charge // leave in for randomised amount?
+                } else {
+                    Message_StartTextbox(play, 0x471, &this->actor);
+                    this->curTextId = 0x471; // confirm withdrawl
+                    this->serviceFee = 0;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
