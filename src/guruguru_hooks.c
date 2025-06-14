@@ -43,6 +43,88 @@ static u16 textIDs[] = { 0x292A, 0x292B, 0x292C, 0x292D, 0x292E, 0x292F, 0x2930,
 
 void func_80BC6E10(EnGuruguru* this);
 void func_80BC73F4(EnGuruguru* this);
+void func_80BC7440(EnGuruguru* this, PlayState* play);
+void func_80BC6F14(EnGuruguru* this, PlayState* play);
+void EnGuruguru_ChangeAnim(EnGuruguru* this, s32 animIndex);
+
+// New action function for direct item giving
+void EnGuruguru_GiveItemDirectly(EnGuruguru* this, PlayState* play);
+
+// Patch the initialization function to set up direct item giving when appropriate
+RECOMP_PATCH void func_80BC6E10(EnGuruguru* this) {
+    // Check if we should give the item directly (randomizer location not checked and night time)
+    if (this->actor.params == 1 && !rando_location_is_checked(LOCATION_GURU_GURU)) {
+        // Set up for direct item giving instead of conversation
+        this->actionFunc = EnGuruguru_GiveItemDirectly;
+        this->headZRotTarget = 0;
+        this->unk268 = 1;
+        this->unk270 = 0;
+        this->textIdIndex = 0;
+        this->unk272 = 0;
+        return;
+    }
+
+    // Original logic for other cases
+    EnGuruguru_ChangeAnim(this, 0); // GURU_GURU_ANIM_PLAY_STILL
+    this->textIdIndex = 0;
+    this->unk270 = 0;
+    if (this->actor.params == 0) {
+        if (CHECK_WEEKEVENTREG(WEEKEVENTREG_38_10)) {
+            this->textIdIndex = 1;
+        }
+    } else if (CHECK_WEEKEVENTREG(WEEKEVENTREG_38_40)) {
+        this->textIdIndex = 2;
+    } else {
+        this->textIdIndex = 3;
+        this->unk270 = 1;
+    }
+    this->headZRotTarget = 0;
+    this->unk268 = 1;
+    this->actor.textId = textIDs[this->textIdIndex];
+    if (((this->textIdIndex == 0) || (this->textIdIndex == 1)) && CHECK_WEEKEVENTREG(WEEKEVENTREG_77_04)) {
+        if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_88_04)) {
+            this->actor.textId = 0x295F;
+        } else {
+            this->actor.textId = 0x2960;
+        }
+    }
+    this->unk272 = 0;
+    this->actionFunc = func_80BC6F14;
+}
+
+// New action function that directly offers the item without conversation
+void EnGuruguru_GiveItemDirectly(EnGuruguru* this, PlayState* play) {
+    s16 yaw;
+    s16 yawTemp;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (rando_location_is_checked(LOCATION_GURU_GURU)) {
+        func_80BC6E10(this);
+        return;
+    }
+
+    yawTemp = this->actor.yawTowardsPlayer - this->actor.world.rot.y;
+    yaw = ABS_ALT(yawTemp);
+
+    // Check if player is close enough and facing the right direction
+    if (yaw <= 0x2890 && this->actor.xzDistToPlayer <= 60.0f) {
+        // Directly offer the item without conversation
+        if (Actor_HasParent(&this->actor, play)) {
+            // Item was taken, mark location as checked and set up post-item state
+            this->actor.parent = NULL;
+            SET_WEEKEVENTREG(WEEKEVENTREG_38_40);
+            Message_BombersNotebookQueueEvent(play, BOMBERS_NOTEBOOK_EVENT_RECEIVED_BREMEN_MASK);
+            Message_BombersNotebookQueueEvent(play, BOMBERS_NOTEBOOK_EVENT_MET_GURU_GURU);
+
+            // Transition to normal conversation state
+            func_80BC6E10(this);
+        } else {
+            // Offer the item directly
+            Actor_OfferGetItem(&this->actor, play, GI_MASK_BREMEN, 60.0f, 60.0f);
+        }
+    }
+}
 
 RECOMP_PATCH void func_80BC7068(EnGuruguru* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
