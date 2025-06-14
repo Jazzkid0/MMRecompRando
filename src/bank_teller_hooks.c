@@ -76,13 +76,13 @@ static AnimationInfo sAnimationInfo[GINKO_ANIM_MAX] = {
 };
 
 bool awardChecked;
-extern bool Actor_TalkOfferAccepted(Actor* this, GameState* play);
+// extern bool Actor_ProcessTalkRequest(Actor* this, GameState* play);
 
 RECOMP_PATCH void EnGinkoMan_Idle(EnGinkoMan* this, PlayState* play) {
     s32 yaw = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
 
     EnGinkoMan_SwitchAnimation(this, play);
-    if (Actor_TalkOfferAccepted(&this->actor, &play->state)) {
+    if (Actor_ProcessTalkRequest(&this->actor, &play->state)) {
         if (HS_GET_BANK_RUPEES() == 0) {
             if (CHECK_WEEKEVENTREG(WEEKEVENTREG_10_08)) {
                 Message_StartTextbox(play, 0x44E, &this->actor);

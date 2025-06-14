@@ -259,7 +259,6 @@ RECOMP_PATCH void EnBal_UnlockSelectedAreaMap(EnBal* this) {
 void EnBal_SetupInflateBalloon(EnBal* this);
 void EnBal_InflateBalloon(EnBal* this, PlayState* play);
 void EnBal_SetupTalk(EnBal* this);
-extern bool Actor_TalkOfferAccepted(Actor* this, GameState* play);
 extern void EnBal_ThrowMagicSparkles(EnBal* this, PlayState* play);
 
 RECOMP_PATCH void EnBal_GroundIdle(EnBal* this, PlayState* play) {
@@ -274,7 +273,7 @@ RECOMP_PATCH void EnBal_GroundIdle(EnBal* this, PlayState* play) {
         this->timer++;
     }
 
-    if (Actor_TalkOfferAccepted(&this->picto.actor, &play->state)) {
+    if (Actor_ProcessTalkRequest(&this->picto.actor, &play->state)) {
         this->forceEyesShut = false;
         this->eyeTexIndex = TINGLE_EYETEX_OPEN;
         this->watchTarget = TINGLE_WATCH_TARGET_PLAYER;
