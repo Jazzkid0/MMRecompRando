@@ -123,6 +123,98 @@ void func_808F35D8(EnIn* this, PlayState* play);
 void func_808F3B40(EnIn* this, PlayState* play);
 void func_808F3D40(EnIn* this, PlayState* play);
 s32 func_808F4270(PlayState* play, EnIn* this, s32 arg2, MessageContext* msgCtx, s32 arg4);
+s32 func_808F33B8(void);
+
+RECOMP_PATCH u16 func_808F3DD4(PlayState* play, EnIn* this, u32 arg2) {
+    u16 textId = 0;
+
+    if (Player_GetMask(play) == PLAYER_MASK_CIRCUS_LEADER) {
+        if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_63_40)) {
+            SET_WEEKEVENTREG(WEEKEVENTREG_63_40);
+            textId = 0x34AE;
+        } else if (this->unk4AC & 8) {
+            textId = 0x34B2;
+        } else {
+            textId = 0x34B0;
+        }
+        return textId;
+    }
+
+    switch (arg2) {
+        case 0:
+            if ((GET_PLAYER_FORM == PLAYER_FORM_ZORA) || (GET_PLAYER_FORM == PLAYER_FORM_GORON)) {
+                textId = 0x345C;
+            } else if (GET_PLAYER_FORM == PLAYER_FORM_DEKU) {
+                textId = 0x3460;
+            } else if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_15_08)) {
+                textId = 0x3458;
+            } else {
+                textId = 0x345B;
+            }
+            break;
+
+        case 1:
+            if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_15_10)) {
+                textId = 0x3463;
+            } else {
+                textId = 0x346B;
+            }
+            break;
+
+        case 3:
+            if (GET_PLAYER_FORM == PLAYER_FORM_DEKU) {
+                textId = 0x3485;
+            } else if ((GET_PLAYER_FORM == PLAYER_FORM_ZORA) || (GET_PLAYER_FORM == PLAYER_FORM_GORON)) {
+                textId = 0x3484;
+            // } else if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_56_04)) {
+            //     textId = 0x3471;
+            } else {
+                textId = 0x3482;
+            }
+            break;
+
+        case 4:
+            if ((GET_PLAYER_FORM == PLAYER_FORM_ZORA) || (GET_PLAYER_FORM == PLAYER_FORM_GORON)) {
+                textId = 0x348A;
+            } else if (GET_PLAYER_FORM == PLAYER_FORM_DEKU) {
+                textId = 0x348B;
+            } else if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_16_01)) {
+                textId = 0x3486;
+            } else {
+                textId = 0x3489;
+            }
+            break;
+
+        case 5:
+            if (func_808F33B8()) {
+                textId = 0x34B3;
+            } else if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_16_02)) {
+                textId = 0x348E;
+            } else {
+                textId = 0x3493;
+            }
+            break;
+
+        case 7:
+            if (GET_PLAYER_FORM == PLAYER_FORM_DEKU) {
+                textId = 0x34A8;
+            } else if ((GET_PLAYER_FORM == PLAYER_FORM_ZORA) || (GET_PLAYER_FORM == PLAYER_FORM_GORON)) {
+                textId = 0x34A7;
+            } else if (!CHECK_WEEKEVENTREG(WEEKEVENTREG_16_04)) {
+                textId = 0x3495;
+            } else {
+                textId = 0x34A5;
+            }
+            break;
+
+        default:
+            break;
+    }
+    if (textId == 0) {
+        textId = 1;
+    }
+    return textId;
+}
 
 RECOMP_PATCH s32 func_808F4414(PlayState* play, EnIn* this, s32 arg2) {
     u16 textId = this->actor.textId;
@@ -239,7 +331,7 @@ RECOMP_PATCH s32 func_808F4414(PlayState* play, EnIn* this, s32 arg2) {
             switch (textId) {
                 case 0x3463:
                     SET_WEEKEVENTREG(WEEKEVENTREG_15_10);
-                    Actor_ContinueText(play, &this->actor, 0x3464);
+                    Actor_ContinueText(play, &this->actor, 0x3466);
                     ret = false;
                     break;
 
@@ -291,7 +383,7 @@ RECOMP_PATCH s32 func_808F4414(PlayState* play, EnIn* this, s32 arg2) {
                     break;
 
                 case 0x346B:
-                    Actor_ContinueText(play, &this->actor, 0x346C);
+                    Actor_ContinueText(play, &this->actor, 0x3466);
                     ret = false;
                     break;
 
