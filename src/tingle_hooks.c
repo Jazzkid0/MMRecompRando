@@ -4,9 +4,6 @@
 
 #include "apcommon.h"
 
-// #include "overlays/actors/ovl_En_Bal/z_en_bal.h"
-// #include "overlays/actors/ovl_En_Clear_Tag/z_en_clear_tag.h"
-
 #define TINGLE_LIMB_MAX 0x21
 #define TINGLE_LIMB_BALLOON 0x06
 
